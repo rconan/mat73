@@ -1,3 +1,19 @@
+//! Import Matlab 7.3 mat files array into Rust
+//!
+//! # Examples
+//! Writing a Matlab array into a `Vec`:
+//!```
+//! let file = "examples/arrays.mat";
+//! let mat_file = mat73::File::new(file).unwrap();
+//! let var: Vec<f64> = mat_file.array("q").unwrap().into();
+//!```
+//! Writing a Matlab array into a [nalgebra](https://crates.io/crates/nalgebra) matrix:
+//!```
+//! let file = "examples/arrays.mat";
+//! let mat_file = mat73::File::new(file).unwrap();
+//! let var: nalgebra::DMatrix<f64> = mat_file.array("w").unwrap().into();
+//!```
+
 pub enum Error {
     HDF5(hdf5::Error),
     Dataset(String),
@@ -60,16 +76,18 @@ impl<T> MatVar<T> {
     }
 }
 
+/// Matlab 7.3 mat file
 pub struct File {
     h5: hdf5::File,
 }
 impl File {
-    /// Load variables from a Matlab mat file
+    /// Open a Matlab mat file
     pub fn new<P: AsRef<std::path::Path>>(file: P) -> Result<Self> {
         Ok(Self {
             h5: hdf5::File::open(file)?,
         })
     }
+    /// Read a Matlab array
     pub fn array<T: hdf5::H5Type>(&self, name: &str) -> Result<MatVar<T>> {
         let dataset = match self.h5.dataset(name) {
             Ok(it) => it,
@@ -83,12 +101,14 @@ impl File {
     }
 }
 
+/// Creates a Rust `Vec` from a Matlab array, column wise
 impl<T> From<MatVar<T>> for Vec<T> {
     fn from(var: MatVar<T>) -> Self {
         var.raw()
     }
 }
 #[cfg(feature = "nalgebra")]
+/// Creates a nalgebra matrix from a Matlab 2D array
 impl<T: 'static + std::marker::Copy + std::cmp::PartialEq + std::fmt::Debug> From<MatVar<T>>
     for nalgebra::Matrix<
         T,
