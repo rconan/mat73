@@ -14,9 +14,13 @@
 //! let var: nalgebra::DMatrix<f64> = mat_file.array("w").unwrap().into();
 //!```
 
+use hdf5::types::FixedAscii;
+
 pub enum Error {
     HDF5(hdf5::Error),
     Dataset(String),
+    Group(String),
+    Struct,
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -28,6 +32,8 @@ impl std::fmt::Display for Error {
                 <Self as std::error::Error>::source(self).unwrap()
             ),
             Error::Dataset(name) => write!(f, "Loading {} dataset failed", name),
+            Error::Group(name) => write!(f, "Loading {} group failed", name),
+            Error::Struct => write!(f, "Matlab class is not a struct"),
         }
     }
 }
@@ -75,6 +81,11 @@ impl<T> MatVar<T> {
         self.shape[0]
     }
 }
+/// Matlab struct
+#[derive(Debug)]
+pub struct MatStruct {
+    pub field_names: Vec<String>,
+}
 
 /// Matlab 7.3 mat file
 pub struct File {
@@ -98,6 +109,30 @@ impl File {
             shape: dataset.shape(),
             data: dataset.read_raw::<T>()?,
         })
+    }
+    pub fn structure(&self, name: &str) -> Result<MatStruct> {
+        let group = match self.h5.group(name) {
+            Ok(it) => it,
+            _ => return Err(Error::Group(name.to_string())),
+        };
+        group
+            .attr("MATLAB_class")?
+            .read_scalar::<hdf5::types::FixedAscii<256>>()
+            .and_then(|matlab_type| {
+                if matlab_type.as_str() == "struct" {
+                    Ok(())
+                } else {
+                    Err("Matlab class is not a struct".into())
+                }
+            })?;
+        let field_names = group.attr("MATLAB_fields")?.read_raw().map(
+            |data: Vec<hdf5::types::VarLenArray<FixedAscii<1>>>| {
+                data.into_iter()
+                    .map(|v| v.iter().map(|x| x.as_str()).collect::<String>())
+                    .collect::<Vec<String>>()
+            },
+        )?;
+        Ok(MatStruct { field_names })
     }
 }
 
